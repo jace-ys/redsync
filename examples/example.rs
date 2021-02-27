@@ -45,9 +45,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => (),
     };
 
+    dlm.extend(&lock2, Duration::from_secs(2))
+        .map_err(|err| format!("Failed to extend lock on resource: {}", err))?;
+    println!("[t = 2] Extended 2nd lock for 2 seconds!");
+
+    println!("[t = 2] Sleeping for 1 second!");
+    thread::sleep(Duration::from_secs(1));
+
     dlm.unlock(&lock2)
         .map_err(|err| format!("Failed to release lock on resource: {}", err))?;
-    println!("[t = 2] Released 2nd lock after 1 second!");
+    println!("[t = 3] Released 2nd lock after 1 second!");
 
     Ok(())
 }

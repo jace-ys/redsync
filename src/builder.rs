@@ -7,7 +7,6 @@ pub struct RedlockBuilder<T: redis::IntoConnectionInfo> {
     addrs: Vec<T>,
     retry_count: u32,
     retry_delay: Duration,
-    retry_jitter: u32,
 }
 
 impl<T: redis::IntoConnectionInfo> RedlockBuilder<T> {
@@ -16,7 +15,6 @@ impl<T: redis::IntoConnectionInfo> RedlockBuilder<T> {
             addrs,
             retry_count: 3,
             retry_delay: Duration::from_millis(200),
-            retry_jitter: 50,
         }
     }
 
@@ -30,11 +28,6 @@ impl<T: redis::IntoConnectionInfo> RedlockBuilder<T> {
         self
     }
 
-    pub fn retry_jitter(mut self, retry_jitter: u32) -> Self {
-        self.retry_jitter = retry_jitter;
-        self
-    }
-
     pub fn build(self) -> Result<Redlock, RedlockError> {
         let mut clients: Vec<redis::Client> = Vec::with_capacity(self.addrs.len());
         for addr in self.addrs {
@@ -42,13 +35,14 @@ impl<T: redis::IntoConnectionInfo> RedlockBuilder<T> {
         }
 
         let quorum = (clients.len() as u32) / 2 + 1;
+        let retry_jitter = self.retry_delay.as_millis() as f64 * 0.5;
 
         Ok(Redlock {
             clients,
             quorum,
             retry_count: self.retry_count,
             retry_delay: self.retry_delay,
-            retry_jitter: self.retry_jitter,
+            retry_jitter,
             clock_drift_factor: 0.01,
             connection_timeout_factor: 0.005,
         })

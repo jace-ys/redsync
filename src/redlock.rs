@@ -1,7 +1,7 @@
 use crate::builder::RedlockBuilder;
 use crate::errors::{MultiError, RedlockError};
 
-use std::ops::Add;
+use std::ops::{Add, Sub};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -18,6 +18,13 @@ else
     return 0
 end";
 
+const EXTEND_SCRIPT: &str = "\
+if redis.call(\"get\", KEYS[1]) == ARGV[1] then
+    return redis.call(\"pexpire\", KEYS[1], ARGV[2])
+else
+    return 0
+end";
+
 pub struct Lock {
     pub resource: String,
     pub value: String,
@@ -30,9 +37,14 @@ pub struct Redlock {
     pub(crate) quorum: u32,
     pub(crate) retry_count: u32,
     pub(crate) retry_delay: Duration,
-    pub(crate) retry_jitter: u32,
+    pub(crate) retry_jitter: f64,
     pub(crate) clock_drift_factor: f64,
     pub(crate) connection_timeout_factor: f64,
+}
+
+pub enum Call {
+    Lock,
+    Extend,
 }
 
 impl Redlock {
@@ -42,6 +54,20 @@ impl Redlock {
 
     pub fn lock(&self, resource: &str, ttl: Duration) -> Result<Lock, RedlockError> {
         let value = self.get_unique_lock_id();
+        self.call(Call::Lock, resource, &value, ttl)
+    }
+
+    pub fn extend(&self, lock: &Lock, ttl: Duration) -> Result<Lock, RedlockError> {
+        self.call(Call::Extend, &lock.resource, &lock.value, ttl)
+    }
+
+    fn call(
+        &self,
+        call: Call,
+        resource: &str,
+        value: &str,
+        ttl: Duration,
+    ) -> Result<Lock, RedlockError> {
         let drift = Duration::from_millis(
             (ttl.as_millis() as f64 * self.clock_drift_factor as f64) as u64 + 2,
         );
@@ -53,14 +79,19 @@ impl Redlock {
             let start = Instant::now();
 
             let lock = Lock {
-                resource: resource.to_owned(),
-                value: value.to_owned(),
+                resource: String::from(resource),
+                value: String::from(value),
                 ttl,
                 expiry: start + ttl - drift,
             };
 
             for client in &self.clients {
-                match self.lock_instance(client, &lock) {
+                let result = match call {
+                    Call::Lock => self.lock_instance(client, &lock),
+                    Call::Extend => self.extend_instance(client, &lock),
+                };
+
+                match result {
                     Ok(()) => votes += 1,
                     Err(e) => errors.push(e),
                 }
@@ -95,6 +126,26 @@ impl Redlock {
         match result {
             Ok(redis::Value::Okay) => Ok(()),
             Ok(redis::Value::Nil) => Err(RedlockError::ResourceLocked),
+            Ok(v) => Err(RedlockError::InvalidResponse(v)),
+            Err(e) => Err(RedlockError::RedisError(e)),
+        }
+    }
+
+    fn extend_instance(&self, client: &redis::Client, lock: &Lock) -> Result<(), RedlockError> {
+        let timeout = self.get_connection_timeout(&lock.ttl);
+        let mut conn = client
+            .get_connection_with_timeout(timeout)
+            .map_err(RedlockError::RedisError)?;
+
+        let result = redis::Script::new(EXTEND_SCRIPT)
+            .key(&lock.resource)
+            .arg(&lock.value)
+            .arg(lock.ttl.as_millis() as u64)
+            .invoke(&mut conn);
+
+        match result {
+            Ok(redis::Value::Int(1)) => Ok(()),
+            Ok(redis::Value::Int(0)) => Err(RedlockError::InvalidLease),
             Ok(v) => Err(RedlockError::InvalidResponse(v)),
             Err(e) => Err(RedlockError::RedisError(e)),
         }
@@ -146,13 +197,15 @@ impl Redlock {
     }
 
     fn get_connection_timeout(&self, ttl: &Duration) -> Duration {
-        Duration::from_millis(
-            (ttl.as_millis() as f64 * self.connection_timeout_factor as f64) as u64,
-        )
+        Duration::from_millis((ttl.as_millis() as f64 * self.connection_timeout_factor) as u64)
     }
 
     fn get_retry_delay(&self) -> Duration {
-        let jitter = thread_rng().gen_range(0..self.retry_jitter);
-        self.retry_delay.add(Duration::from_millis(jitter as u64))
+        let jitter = thread_rng().gen_range(-1.0..1.0) * self.retry_jitter;
+        if jitter > 0.0 {
+            self.retry_delay.add(Duration::from_millis(jitter as u64))
+        } else {
+            self.retry_delay.sub(Duration::from_millis(-jitter as u64))
+        }
     }
 }
