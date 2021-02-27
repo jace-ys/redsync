@@ -50,6 +50,7 @@ impl<T: redis::IntoConnectionInfo> RedlockBuilder<T> {
             retry_delay: self.retry_delay,
             retry_jitter: self.retry_jitter,
             clock_drift_factor: 0.01,
+            connection_timeout_factor: 0.005,
         })
     }
 }
