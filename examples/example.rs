@@ -1,7 +1,7 @@
 use std::thread;
 use std::time::Duration;
 
-use redlock::{Redlock, RedlockError};
+use redlock::{RedisInstance, Redlock, RedlockError};
 
 fn main() {
     if let Err(e) = run() {
@@ -10,14 +10,11 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let cluster = vec![
-        "redis://127.0.0.1:6379",
-        "redis://127.0.0.1:6389",
-        "redis://127.0.0.1:6399",
-    ];
-
-    let dlm = Redlock::new(cluster)
-        .map_err(|err| format!("Failed to initialize Redlock client: {}", err))?;
+    let dlm = Redlock::new(vec![
+        RedisInstance::new("redis://127.0.0.1:6389")?,
+        RedisInstance::new("redis://127.0.0.1:6399")?,
+        RedisInstance::new("redis://127.0.0.1:6379")?,
+    ]);
 
     let lock1 = dlm
         .lock("resource", Duration::from_secs(1))

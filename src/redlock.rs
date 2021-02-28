@@ -1,5 +1,6 @@
 use crate::builder::RedlockBuilder;
 use crate::errors::{MultiError, RedlockError};
+use crate::instance::Instance;
 
 use std::ops::{Add, Sub};
 use std::thread;
@@ -8,23 +9,6 @@ use std::time::{Duration, Instant};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
-const LOCK_SCRIPT: &str = "\
-return redis.call(\"set\", KEYS[1], ARGV[1], \"nx\", \"px\", ARGV[2])";
-
-const UNLOCK_SCRIPT: &str = "\
-if redis.call(\"get\", KEYS[1]) == ARGV[1] then
-    return redis.call(\"del\", KEYS[1])
-else
-    return 0
-end";
-
-const EXTEND_SCRIPT: &str = "\
-if redis.call(\"get\", KEYS[1]) == ARGV[1] then
-    return redis.call(\"pexpire\", KEYS[1], ARGV[2])
-else
-    return 0
-end";
-
 pub struct Lock {
     pub resource: String,
     pub value: String,
@@ -32,24 +16,23 @@ pub struct Lock {
     pub expiry: Instant,
 }
 
-pub struct Redlock {
-    pub(crate) clients: Vec<redis::Client>,
+pub struct Redlock<I: Instance> {
+    pub(crate) cluster: Vec<I>,
     pub(crate) quorum: u32,
     pub(crate) retry_count: u32,
     pub(crate) retry_delay: Duration,
     pub(crate) retry_jitter: f64,
     pub(crate) clock_drift_factor: f64,
-    pub(crate) connection_timeout_factor: f64,
 }
 
-pub enum Call {
+enum Call {
     Lock,
     Extend,
 }
 
-impl Redlock {
-    pub fn new<T: redis::IntoConnectionInfo>(addrs: Vec<T>) -> Result<Self, RedlockError> {
-        RedlockBuilder::new(addrs).build()
+impl<I: Instance> Redlock<I> {
+    pub fn new(cluster: Vec<I>) -> Self {
+        RedlockBuilder::new(cluster).build()
     }
 
     pub fn lock(&self, resource: &str, ttl: Duration) -> Result<Lock, RedlockError> {
@@ -85,10 +68,10 @@ impl Redlock {
                 expiry: start + ttl - drift,
             };
 
-            for client in &self.clients {
+            for instance in &self.cluster {
                 let result = match call {
-                    Call::Lock => self.lock_instance(client, &lock),
-                    Call::Extend => self.extend_instance(client, &lock),
+                    Call::Lock => instance.acquire(&lock),
+                    Call::Extend => instance.extend(&lock),
                 };
 
                 match result {
@@ -111,52 +94,12 @@ impl Redlock {
         Err(RedlockError::LockRetriesExceeded(errors))
     }
 
-    fn lock_instance(&self, client: &redis::Client, lock: &Lock) -> Result<(), RedlockError> {
-        let timeout = self.get_connection_timeout(&lock.ttl);
-        let mut conn = client
-            .get_connection_with_timeout(timeout)
-            .map_err(RedlockError::RedisError)?;
-
-        let result = redis::Script::new(LOCK_SCRIPT)
-            .key(&lock.resource)
-            .arg(&lock.value)
-            .arg(lock.ttl.as_millis() as u64)
-            .invoke(&mut conn);
-
-        match result {
-            Ok(redis::Value::Okay) => Ok(()),
-            Ok(redis::Value::Nil) => Err(RedlockError::ResourceLocked),
-            Ok(v) => Err(RedlockError::InvalidResponse(v)),
-            Err(e) => Err(RedlockError::RedisError(e)),
-        }
-    }
-
-    fn extend_instance(&self, client: &redis::Client, lock: &Lock) -> Result<(), RedlockError> {
-        let timeout = self.get_connection_timeout(&lock.ttl);
-        let mut conn = client
-            .get_connection_with_timeout(timeout)
-            .map_err(RedlockError::RedisError)?;
-
-        let result = redis::Script::new(EXTEND_SCRIPT)
-            .key(&lock.resource)
-            .arg(&lock.value)
-            .arg(lock.ttl.as_millis() as u64)
-            .invoke(&mut conn);
-
-        match result {
-            Ok(redis::Value::Int(1)) => Ok(()),
-            Ok(redis::Value::Int(0)) => Err(RedlockError::InvalidLease),
-            Ok(v) => Err(RedlockError::InvalidResponse(v)),
-            Err(e) => Err(RedlockError::RedisError(e)),
-        }
-    }
-
     pub fn unlock(&self, lock: &Lock) -> Result<(), RedlockError> {
         let mut n = 0;
         let mut errors = MultiError::new();
 
-        for client in &self.clients {
-            match self.unlock_instance(client, &lock) {
+        for instance in &self.cluster {
+            match instance.release(&lock) {
                 Ok(()) => n += 1,
                 Err(e) => errors.push(e),
             };
@@ -169,35 +112,12 @@ impl Redlock {
         Ok(())
     }
 
-    fn unlock_instance(&self, client: &redis::Client, lock: &Lock) -> Result<(), RedlockError> {
-        let timeout = self.get_connection_timeout(&lock.ttl);
-        let mut conn = client
-            .get_connection_with_timeout(timeout)
-            .map_err(RedlockError::RedisError)?;
-
-        let result = redis::Script::new(UNLOCK_SCRIPT)
-            .key(&lock.resource)
-            .arg(&lock.value)
-            .invoke(&mut conn);
-
-        match result {
-            Ok(redis::Value::Int(1)) => Ok(()),
-            Ok(redis::Value::Int(0)) => Err(RedlockError::InvalidLease),
-            Ok(v) => Err(RedlockError::InvalidResponse(v)),
-            Err(e) => Err(RedlockError::RedisError(e)),
-        }
-    }
-
     fn get_unique_lock_id(&self) -> String {
         thread_rng()
             .sample_iter(&Alphanumeric)
             .take(20)
             .map(char::from)
             .collect()
-    }
-
-    fn get_connection_timeout(&self, ttl: &Duration) -> Duration {
-        Duration::from_millis((ttl.as_millis() as f64 * self.connection_timeout_factor) as u64)
     }
 
     fn get_retry_delay(&self) -> Duration {
@@ -207,5 +127,176 @@ impl Redlock {
         } else {
             self.retry_delay.sub(Duration::from_millis(-jitter as u64))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::matches;
+
+    struct FakeInstance {
+        acquire: i32,
+        extend: i32,
+        release: i32,
+    }
+
+    impl FakeInstance {
+        pub fn new(acquire: i32, extend: i32, release: i32) -> Self {
+            Self {
+                acquire,
+                extend,
+                release,
+            }
+        }
+    }
+
+    impl Instance for FakeInstance {
+        fn acquire(&self, _lock: &Lock) -> Result<(), RedlockError> {
+            match self.acquire {
+                1 => Ok(()),
+                _ => Err(RedlockError::ResourceLocked),
+            }
+        }
+
+        fn extend(&self, _lock: &Lock) -> Result<(), RedlockError> {
+            match self.extend {
+                1 => Ok(()),
+                _ => Err(RedlockError::InvalidLease),
+            }
+        }
+
+        fn release(&self, _lock: &Lock) -> Result<(), RedlockError> {
+            match self.release {
+                1 => Ok(()),
+                _ => Err(RedlockError::InvalidLease),
+            }
+        }
+    }
+
+    #[test]
+    fn lock() {
+        let dlm = Redlock::new(vec![
+            FakeInstance::new(1, 1, 1),
+            FakeInstance::new(1, 1, 1),
+            FakeInstance::new(0, 1, 1),
+        ]);
+
+        let attempt = dlm.lock("test", Duration::from_secs(1));
+        assert!(attempt.is_ok());
+
+        let lock = attempt.unwrap();
+        assert_eq!(lock.resource, "test");
+        assert!(lock.value.len() > 0);
+        assert_eq!(lock.ttl, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn lock_error() {
+        let dlm = Redlock::new(vec![
+            FakeInstance::new(0, 1, 1),
+            FakeInstance::new(0, 1, 1),
+            FakeInstance::new(1, 1, 1),
+        ]);
+
+        let attempt = dlm.lock("test", Duration::from_secs(1));
+        assert!(matches!(
+            attempt,
+            Err(RedlockError::LockRetriesExceeded { .. })
+        ));
+    }
+
+    #[test]
+    fn extend() -> Result<(), RedlockError> {
+        let dlm = Redlock::new(vec![
+            FakeInstance::new(1, 1, 1),
+            FakeInstance::new(1, 1, 1),
+            FakeInstance::new(1, 0, 1),
+        ]);
+        let lock = dlm.lock("test", Duration::from_secs(1))?;
+
+        let attempt = dlm.extend(&lock, Duration::from_secs(2));
+        assert!(attempt.is_ok());
+
+        let lock = attempt.unwrap();
+        assert_eq!(lock.resource, "test");
+        assert!(lock.value.len() > 0);
+        assert_eq!(lock.ttl, Duration::from_secs(2));
+
+        Ok(())
+    }
+
+    #[test]
+    fn extend_error() -> Result<(), RedlockError> {
+        let dlm = Redlock::new(vec![
+            FakeInstance::new(1, 0, 1),
+            FakeInstance::new(1, 0, 1),
+            FakeInstance::new(1, 1, 1),
+        ]);
+        let lock = dlm.lock("test", Duration::from_secs(1))?;
+
+        let attempt = dlm.extend(&lock, Duration::from_secs(2));
+        assert!(matches!(
+            attempt,
+            Err(RedlockError::LockRetriesExceeded { .. })
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn unlock() -> Result<(), RedlockError> {
+        let dlm = Redlock::new(vec![
+            FakeInstance::new(1, 1, 1),
+            FakeInstance::new(1, 1, 1),
+            FakeInstance::new(1, 1, 0),
+        ]);
+        let lock = dlm.lock("test", Duration::from_secs(1))?;
+
+        let attempt = dlm.unlock(&lock);
+        assert!(attempt.is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn unlock_error() -> Result<(), RedlockError> {
+        let dlm = Redlock::new(vec![
+            FakeInstance::new(1, 1, 0),
+            FakeInstance::new(1, 1, 0),
+            FakeInstance::new(1, 1, 1),
+        ]);
+        let lock = dlm.lock("test", Duration::from_secs(1))?;
+
+        let attempt = dlm.unlock(&lock);
+        assert!(matches!(attempt, Err(RedlockError::UnlockFailed { .. })));
+
+        Ok(())
+    }
+
+    #[test]
+    fn get_unique_lock_id() {
+        let cluster = vec![FakeInstance::new(1, 1, 1)];
+        let dlm = Redlock::new(cluster);
+
+        let value = dlm.get_unique_lock_id();
+        assert_eq!(value.len(), 20);
+        assert!(value.is_ascii());
+    }
+
+    #[test]
+    fn get_retry_delay() {
+        let cluster = vec![FakeInstance::new(1, 1, 1)];
+        let dlm = Redlock::new(cluster);
+
+        let retry_delay = dlm.get_retry_delay();
+        let (min, max) = (Duration::from_millis(100), Duration::from_millis(300));
+        assert!(
+            min < retry_delay && retry_delay < max,
+            "expected retry delay to be between {:?} and {:?}, but got {:?}",
+            min,
+            max,
+            retry_delay,
+        );
     }
 }
