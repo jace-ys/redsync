@@ -57,7 +57,7 @@ impl Instance for RedisInstance {
         match result {
             Ok(redis::Value::Okay) => Ok(()),
             Ok(redis::Value::Nil) => Err(RedlockError::ResourceLocked),
-            Ok(v) => Err(RedlockError::InvalidResponse(v)),
+            Ok(v) => Err(RedlockError::UnexpectedResponse(v)),
             Err(e) => Err(RedlockError::RedisError(e)),
         }
     }
@@ -77,7 +77,7 @@ impl Instance for RedisInstance {
         match result {
             Ok(redis::Value::Int(1)) => Ok(()),
             Ok(redis::Value::Int(0)) => Err(RedlockError::InvalidLease),
-            Ok(v) => Err(RedlockError::InvalidResponse(v)),
+            Ok(v) => Err(RedlockError::UnexpectedResponse(v)),
             Err(e) => Err(RedlockError::RedisError(e)),
         }
     }
@@ -96,7 +96,7 @@ impl Instance for RedisInstance {
         match result {
             Ok(redis::Value::Int(1)) => Ok(()),
             Ok(redis::Value::Int(0)) => Err(RedlockError::InvalidLease),
-            Ok(v) => Err(RedlockError::InvalidResponse(v)),
+            Ok(v) => Err(RedlockError::UnexpectedResponse(v)),
             Err(e) => Err(RedlockError::RedisError(e)),
         }
     }
@@ -115,6 +115,7 @@ mod tests {
     }
 
     fn setup(resource: &str) -> TestHelper {
+        // These tests require running a redis server on 127.0.0.1:6379
         let instance = RedisInstance::new("redis://127.0.0.1:6379").unwrap();
         let lock = Lock {
             resource: String::from(resource),

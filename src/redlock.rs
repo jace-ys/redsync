@@ -22,7 +22,7 @@ pub struct Redlock<I: Instance> {
     pub(crate) retry_count: u32,
     pub(crate) retry_delay: Duration,
     pub(crate) retry_jitter: f64,
-    pub(crate) clock_drift_factor: f64,
+    pub(crate) drift_factor: f64,
 }
 
 enum Call {
@@ -51,9 +51,7 @@ impl<I: Instance> Redlock<I> {
         value: &str,
         ttl: Duration,
     ) -> Result<Lock, RedlockError> {
-        let drift = Duration::from_millis(
-            (ttl.as_millis() as f64 * self.clock_drift_factor as f64) as u64 + 2,
-        );
+        let drift = Duration::from_millis((ttl.as_millis() as f64 * self.drift_factor) as u64 + 2);
 
         let mut errors = MultiError::new();
 
@@ -91,7 +89,10 @@ impl<I: Instance> Redlock<I> {
             }
         }
 
-        Err(RedlockError::LockRetriesExceeded(errors))
+        match call {
+            Call::Lock => Err(RedlockError::LockRetriesExceeded(errors)),
+            Call::Extend => Err(RedlockError::ExtendRetriesExceeded(errors)),
+        }
     }
 
     pub fn unlock(&self, lock: &Lock) -> Result<(), RedlockError> {
@@ -238,7 +239,7 @@ mod tests {
         let attempt = dlm.extend(&lock, Duration::from_secs(2));
         assert!(matches!(
             attempt,
-            Err(RedlockError::LockRetriesExceeded { .. })
+            Err(RedlockError::ExtendRetriesExceeded { .. })
         ));
 
         Ok(())

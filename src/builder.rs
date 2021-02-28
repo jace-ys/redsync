@@ -38,7 +38,7 @@ impl<I: Instance> RedlockBuilder<I> {
             retry_count: self.retry_count,
             retry_delay: self.retry_delay,
             retry_jitter,
-            clock_drift_factor: 0.01,
+            drift_factor: 0.01,
         }
     }
 }
@@ -59,7 +59,7 @@ mod tests {
         assert_eq!(redlock.retry_count, 3);
         assert_eq!(redlock.retry_delay, Duration::from_millis(200));
         assert_eq!(redlock.retry_jitter, 100.0);
-        assert_eq!(redlock.clock_drift_factor, 0.01);
+        assert_eq!(redlock.drift_factor, 0.01);
 
         Ok(())
     }
@@ -74,7 +74,7 @@ mod tests {
         assert_eq!(redlock.retry_count, 5);
         assert_eq!(redlock.retry_delay, Duration::from_millis(200));
         assert_eq!(redlock.retry_jitter, 100.0);
-        assert_eq!(redlock.clock_drift_factor, 0.01);
+        assert_eq!(redlock.drift_factor, 0.01);
 
         Ok(())
     }
@@ -91,7 +91,7 @@ mod tests {
         assert_eq!(redlock.retry_count, 3);
         assert_eq!(redlock.retry_delay, Duration::from_millis(100));
         assert_eq!(redlock.retry_jitter, 50.0);
-        assert_eq!(redlock.clock_drift_factor, 0.01);
+        assert_eq!(redlock.drift_factor, 0.01);
 
         Ok(())
     }

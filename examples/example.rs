@@ -1,15 +1,16 @@
+use std::error::Error;
 use std::thread;
 use std::time::Duration;
 
 use redlock::{RedisInstance, Redlock, RedlockError};
 
 fn main() {
-    if let Err(e) = run() {
-        println!("{}", e);
+    if let Err(err) = run() {
+        println!("{}", err);
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> Result<(), Box<dyn Error>> {
     let dlm = Redlock::new(vec![
         RedisInstance::new("redis://127.0.0.1:6389")?,
         RedisInstance::new("redis://127.0.0.1:6399")?,

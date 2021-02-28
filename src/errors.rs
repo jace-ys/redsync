@@ -7,8 +7,8 @@ use thiserror::Error;
 pub enum RedlockError {
     #[error("{0}")]
     RedisError(#[from] redis::RedisError),
-    #[error("invalid response from Redis server: {0:?}")]
-    InvalidResponse(redis::Value),
+    #[error("unexpected response from Redis: {0:?}")]
+    UnexpectedResponse(redis::Value),
 
     #[error("requested resource is current locked")]
     ResourceLocked,
@@ -17,6 +17,8 @@ pub enum RedlockError {
 
     #[error("lock attempt failed: max retries exceeded: {0}")]
     LockRetriesExceeded(MultiError),
+    #[error("extend attempt failed: max retries exceeded: {0}")]
+    ExtendRetriesExceeded(MultiError),
     #[error("unlock attempt failed: {0}")]
     UnlockFailed(MultiError),
 }
