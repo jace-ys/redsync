@@ -24,7 +24,7 @@ pub enum RedsyncError {
     UnlockFailed(MultiError),
 }
 
-/// `MultiError` wraps Vec<RedsyncError>, typically aggregated over instances in a Redsync cluster.
+/// `MultiError` wraps `Vec<RedsyncError>`, typically aggregated over instances in a Redsync cluster.
 #[derive(Debug, Default, PartialEq)]
 pub struct MultiError(Vec<RedsyncError>);
 

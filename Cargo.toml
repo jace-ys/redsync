@@ -1,6 +1,6 @@
 [package]
 name = "redsync"
-version = "0.1.2"
+version = "1.0.0"
 authors = ["jace-ys <jaceys.tan@gmail.com>"]
 edition = "2018"
 description = "A Rust implementation of Redlock for distributed locks with Redis"

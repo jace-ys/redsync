@@ -13,7 +13,7 @@ Add the following line to your Cargo.toml file:
 
 ```toml
 [dependencies]
-redsync = "0.1.2"
+redsync = "1.0.0"
 ```
 
 ## Documentation
