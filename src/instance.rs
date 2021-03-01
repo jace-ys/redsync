@@ -120,7 +120,7 @@ mod tests {
         let lock = Lock {
             resource: String::from(resource),
             value: String::from("1"),
-            ttl: Duration::from_millis(100),
+            ttl: Duration::from_millis(500),
             expiry: Instant::now(),
         };
 
@@ -180,7 +180,7 @@ mod tests {
     fn extend_expired_lock() -> Result<(), RedlockError> {
         let test = setup("extend_expired_lock");
         test.instance.acquire(&test.lock)?;
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_secs(1));
 
         let attempt = test.instance.extend(&test.lock);
         assert!(matches!(attempt, Err(RedlockError::InvalidLease)));
@@ -215,7 +215,7 @@ mod tests {
     fn release_expired_lock() -> Result<(), RedlockError> {
         let test = setup("unlock_expired_lock");
         test.instance.acquire(&test.lock)?;
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_secs(1));
 
         let attempt = test.instance.release(&test.lock);
         assert!(matches!(attempt, Err(RedlockError::InvalidLease)));
