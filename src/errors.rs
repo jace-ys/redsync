@@ -31,12 +31,12 @@ impl MultiError {
         Default::default()
     }
 
-    pub fn reset(&mut self) {
-        self.clear()
-    }
-
     pub fn includes(&self, e: RedsyncError) -> bool {
         self.contains(&e)
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.clear()
     }
 }
 
