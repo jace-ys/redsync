@@ -20,7 +20,7 @@ redsync = "1.0.0"
 
 See https://docs.rs/redsync.
 
-# Quick Start
+## Quick Start
 
 ```rust
 use std::error::Error;
