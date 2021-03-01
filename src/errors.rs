@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
-pub enum RedlockError {
+pub enum RedsyncError {
     #[error("{0}")]
     RedisError(#[from] redis::RedisError),
     #[error("unexpected response from Redis: {0:?}")]
@@ -24,7 +24,7 @@ pub enum RedlockError {
 }
 
 #[derive(Debug, Default, PartialEq)]
-pub struct MultiError(Vec<RedlockError>);
+pub struct MultiError(Vec<RedsyncError>);
 
 impl MultiError {
     pub fn new() -> Self {
@@ -35,13 +35,13 @@ impl MultiError {
         self.clear()
     }
 
-    pub fn includes(&self, e: RedlockError) -> bool {
+    pub fn includes(&self, e: RedsyncError) -> bool {
         self.contains(&e)
     }
 }
 
 impl Deref for MultiError {
-    type Target = Vec<RedlockError>;
+    type Target = Vec<RedsyncError>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

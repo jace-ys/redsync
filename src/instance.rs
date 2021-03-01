@@ -1,12 +1,12 @@
-use crate::errors::RedlockError;
-use crate::redlock::Lock;
+use crate::errors::RedsyncError;
+use crate::redsync::Lock;
 
 use std::time::Duration;
 
 pub trait Instance {
-    fn acquire(&self, lock: &Lock) -> Result<(), RedlockError>;
-    fn extend(&self, lock: &Lock) -> Result<(), RedlockError>;
-    fn release(&self, lock: &Lock) -> Result<(), RedlockError>;
+    fn acquire(&self, lock: &Lock) -> Result<(), RedsyncError>;
+    fn extend(&self, lock: &Lock) -> Result<(), RedsyncError>;
+    fn release(&self, lock: &Lock) -> Result<(), RedsyncError>;
 }
 
 const LOCK_SCRIPT: &str = "\
@@ -31,8 +31,8 @@ pub struct RedisInstance {
 }
 
 impl RedisInstance {
-    pub fn new<T: redis::IntoConnectionInfo>(params: T) -> Result<Self, RedlockError> {
-        let client = redis::Client::open(params).map_err(RedlockError::RedisError)?;
+    pub fn new<T: redis::IntoConnectionInfo>(params: T) -> Result<Self, RedsyncError> {
+        let client = redis::Client::open(params).map_err(RedsyncError::RedisError)?;
         Ok(Self { client })
     }
 
@@ -42,11 +42,11 @@ impl RedisInstance {
 }
 
 impl Instance for RedisInstance {
-    fn acquire(&self, lock: &Lock) -> Result<(), RedlockError> {
+    fn acquire(&self, lock: &Lock) -> Result<(), RedsyncError> {
         let mut conn = self
             .client
             .get_connection_with_timeout(self.timeout(&lock.ttl))
-            .map_err(RedlockError::RedisError)?;
+            .map_err(RedsyncError::RedisError)?;
 
         let result = redis::Script::new(LOCK_SCRIPT)
             .key(&lock.resource)
@@ -56,17 +56,17 @@ impl Instance for RedisInstance {
 
         match result {
             Ok(redis::Value::Okay) => Ok(()),
-            Ok(redis::Value::Nil) => Err(RedlockError::ResourceLocked),
-            Ok(v) => Err(RedlockError::UnexpectedResponse(v)),
-            Err(e) => Err(RedlockError::RedisError(e)),
+            Ok(redis::Value::Nil) => Err(RedsyncError::ResourceLocked),
+            Ok(v) => Err(RedsyncError::UnexpectedResponse(v)),
+            Err(e) => Err(RedsyncError::RedisError(e)),
         }
     }
 
-    fn extend(&self, lock: &Lock) -> Result<(), RedlockError> {
+    fn extend(&self, lock: &Lock) -> Result<(), RedsyncError> {
         let mut conn = self
             .client
             .get_connection_with_timeout(self.timeout(&lock.ttl))
-            .map_err(RedlockError::RedisError)?;
+            .map_err(RedsyncError::RedisError)?;
 
         let result = redis::Script::new(EXTEND_SCRIPT)
             .key(&lock.resource)
@@ -76,17 +76,17 @@ impl Instance for RedisInstance {
 
         match result {
             Ok(redis::Value::Int(1)) => Ok(()),
-            Ok(redis::Value::Int(0)) => Err(RedlockError::InvalidLease),
-            Ok(v) => Err(RedlockError::UnexpectedResponse(v)),
-            Err(e) => Err(RedlockError::RedisError(e)),
+            Ok(redis::Value::Int(0)) => Err(RedsyncError::InvalidLease),
+            Ok(v) => Err(RedsyncError::UnexpectedResponse(v)),
+            Err(e) => Err(RedsyncError::RedisError(e)),
         }
     }
 
-    fn release(&self, lock: &Lock) -> Result<(), RedlockError> {
+    fn release(&self, lock: &Lock) -> Result<(), RedsyncError> {
         let mut conn = self
             .client
             .get_connection_with_timeout(self.timeout(&lock.ttl))
-            .map_err(RedlockError::RedisError)?;
+            .map_err(RedsyncError::RedisError)?;
 
         let result = redis::Script::new(UNLOCK_SCRIPT)
             .key(&lock.resource)
@@ -95,9 +95,9 @@ impl Instance for RedisInstance {
 
         match result {
             Ok(redis::Value::Int(1)) => Ok(()),
-            Ok(redis::Value::Int(0)) => Err(RedlockError::InvalidLease),
-            Ok(v) => Err(RedlockError::UnexpectedResponse(v)),
-            Err(e) => Err(RedlockError::RedisError(e)),
+            Ok(redis::Value::Int(0)) => Err(RedsyncError::InvalidLease),
+            Ok(v) => Err(RedsyncError::UnexpectedResponse(v)),
+            Err(e) => Err(RedsyncError::RedisError(e)),
         }
     }
 }
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn url_error() {
         let instance = RedisInstance::new("127.0.0.1:6379");
-        assert!(matches!(instance, Err(RedlockError::RedisError { .. })));
+        assert!(matches!(instance, Err(RedsyncError::RedisError { .. })));
     }
 
     #[test]
@@ -142,18 +142,18 @@ mod tests {
     }
 
     #[test]
-    fn acquire_locked_resource() -> Result<(), RedlockError> {
+    fn acquire_locked_resource() -> Result<(), RedsyncError> {
         let test = setup("acquire_locked_resource");
         test.instance.acquire(&test.lock)?;
 
         let attempt = test.instance.acquire(&test.lock);
-        assert!(matches!(attempt, Err(RedlockError::ResourceLocked)));
+        assert!(matches!(attempt, Err(RedsyncError::ResourceLocked)));
 
         Ok(())
     }
 
     #[test]
-    fn extend() -> Result<(), RedlockError> {
+    fn extend() -> Result<(), RedsyncError> {
         let mut test = setup("extend");
         test.instance.acquire(&test.lock)?;
 
@@ -165,31 +165,31 @@ mod tests {
     }
 
     #[test]
-    fn extend_invalid_lock() -> Result<(), RedlockError> {
+    fn extend_invalid_lock() -> Result<(), RedsyncError> {
         let mut test = setup("extend_invalid_lock");
         test.instance.acquire(&test.lock)?;
 
         test.lock.value = String::from("2");
         let attempt = test.instance.extend(&test.lock);
-        assert!(matches!(attempt, Err(RedlockError::InvalidLease)));
+        assert!(matches!(attempt, Err(RedsyncError::InvalidLease)));
 
         Ok(())
     }
 
     #[test]
-    fn extend_expired_lock() -> Result<(), RedlockError> {
+    fn extend_expired_lock() -> Result<(), RedsyncError> {
         let test = setup("extend_expired_lock");
         test.instance.acquire(&test.lock)?;
         thread::sleep(Duration::from_secs(1));
 
         let attempt = test.instance.extend(&test.lock);
-        assert!(matches!(attempt, Err(RedlockError::InvalidLease)));
+        assert!(matches!(attempt, Err(RedsyncError::InvalidLease)));
 
         Ok(())
     }
 
     #[test]
-    fn release() -> Result<(), RedlockError> {
+    fn release() -> Result<(), RedsyncError> {
         let test = setup("release");
         test.instance.acquire(&test.lock)?;
 
@@ -200,25 +200,25 @@ mod tests {
     }
 
     #[test]
-    fn release_invalid_lock() -> Result<(), RedlockError> {
+    fn release_invalid_lock() -> Result<(), RedsyncError> {
         let mut test = setup("unlock_invalid_lock");
         test.instance.acquire(&test.lock)?;
 
         test.lock.value = String::from("2");
         let attempt = test.instance.release(&test.lock);
-        assert!(matches!(attempt, Err(RedlockError::InvalidLease)));
+        assert!(matches!(attempt, Err(RedsyncError::InvalidLease)));
 
         Ok(())
     }
 
     #[test]
-    fn release_expired_lock() -> Result<(), RedlockError> {
+    fn release_expired_lock() -> Result<(), RedsyncError> {
         let test = setup("unlock_expired_lock");
         test.instance.acquire(&test.lock)?;
         thread::sleep(Duration::from_secs(1));
 
         let attempt = test.instance.release(&test.lock);
-        assert!(matches!(attempt, Err(RedlockError::InvalidLease)));
+        assert!(matches!(attempt, Err(RedsyncError::InvalidLease)));
 
         Ok(())
     }

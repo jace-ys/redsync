@@ -1,8 +1,8 @@
 [![ci-badge]][ci-workflow]
 
-[ci-badge]: https://github.com/jace-ys/redlock-rs/workflows/ci/badge.svg
-[ci-workflow]: https://github.com/jace-ys/redlock-rs/actions?query=workflow%3Aci
+[ci-badge]: https://github.com/jace-ys/redsync/workflows/ci/badge.svg
+[ci-workflow]: https://github.com/jace-ys/redsync/actions?query=workflow%3Aci
 
-# `redlock-rs`
+# Redsync
 
 A Rust implementation of [Redlock](https://redis.io/topics/distlock) for distributed locks with Redis.

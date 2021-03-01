@@ -1,9 +1,9 @@
-pub use crate::builder::RedlockBuilder;
-pub use crate::errors::{MultiError, RedlockError};
+pub use crate::builder::RedsyncBuilder;
+pub use crate::errors::{MultiError, RedsyncError};
 pub use crate::instance::{Instance, RedisInstance};
-pub use crate::redlock::{Lock, Redlock};
+pub use crate::redsync::{Lock, Redsync};
 
 mod builder;
 mod errors;
 mod instance;
-mod redlock;
+mod redsync;

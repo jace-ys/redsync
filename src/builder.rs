@@ -1,15 +1,15 @@
 use crate::instance::Instance;
-use crate::redlock::Redlock;
+use crate::redsync::Redsync;
 
 use std::time::Duration;
 
-pub struct RedlockBuilder<I: Instance> {
+pub struct RedsyncBuilder<I: Instance> {
     cluster: Vec<I>,
     retry_count: u32,
     retry_delay: Duration,
 }
 
-impl<I: Instance> RedlockBuilder<I> {
+impl<I: Instance> RedsyncBuilder<I> {
     pub fn new(cluster: Vec<I>) -> Self {
         Self {
             cluster,
@@ -28,11 +28,11 @@ impl<I: Instance> RedlockBuilder<I> {
         self
     }
 
-    pub fn build(self) -> Redlock<I> {
+    pub fn build(self) -> Redsync<I> {
         let quorum = (self.cluster.len() as u32) / 2 + 1;
         let retry_jitter = self.retry_delay.as_millis() as f64 * 0.5;
 
-        Redlock {
+        Redsync {
             cluster: self.cluster,
             quorum,
             retry_count: self.retry_count,
@@ -46,52 +46,52 @@ impl<I: Instance> RedlockBuilder<I> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::errors::RedlockError;
+    use crate::errors::RedsyncError;
     use crate::instance::RedisInstance;
 
     #[test]
-    fn default() -> Result<(), RedlockError> {
+    fn default() -> Result<(), RedsyncError> {
         let cluster = vec![RedisInstance::new("redis://127.0.0.1:6379")?];
-        let redlock = RedlockBuilder::new(cluster).build();
+        let redsync = RedsyncBuilder::new(cluster).build();
 
-        assert_eq!(redlock.cluster.len(), 1);
-        assert_eq!(redlock.quorum, 1);
-        assert_eq!(redlock.retry_count, 3);
-        assert_eq!(redlock.retry_delay, Duration::from_millis(200));
-        assert_eq!(redlock.retry_jitter, 100.0);
-        assert_eq!(redlock.drift_factor, 0.01);
+        assert_eq!(redsync.cluster.len(), 1);
+        assert_eq!(redsync.quorum, 1);
+        assert_eq!(redsync.retry_count, 3);
+        assert_eq!(redsync.retry_delay, Duration::from_millis(200));
+        assert_eq!(redsync.retry_jitter, 100.0);
+        assert_eq!(redsync.drift_factor, 0.01);
 
         Ok(())
     }
 
     #[test]
-    fn retry_count() -> Result<(), RedlockError> {
+    fn retry_count() -> Result<(), RedsyncError> {
         let cluster = vec![RedisInstance::new("redis://127.0.0.1:6379")?];
-        let redlock = RedlockBuilder::new(cluster).retry_count(5).build();
+        let redsync = RedsyncBuilder::new(cluster).retry_count(5).build();
 
-        assert_eq!(redlock.cluster.len(), 1);
-        assert_eq!(redlock.quorum, 1);
-        assert_eq!(redlock.retry_count, 5);
-        assert_eq!(redlock.retry_delay, Duration::from_millis(200));
-        assert_eq!(redlock.retry_jitter, 100.0);
-        assert_eq!(redlock.drift_factor, 0.01);
+        assert_eq!(redsync.cluster.len(), 1);
+        assert_eq!(redsync.quorum, 1);
+        assert_eq!(redsync.retry_count, 5);
+        assert_eq!(redsync.retry_delay, Duration::from_millis(200));
+        assert_eq!(redsync.retry_jitter, 100.0);
+        assert_eq!(redsync.drift_factor, 0.01);
 
         Ok(())
     }
 
     #[test]
-    fn retry_delay() -> Result<(), RedlockError> {
+    fn retry_delay() -> Result<(), RedsyncError> {
         let cluster = vec![RedisInstance::new("redis://127.0.0.1:6379")?];
-        let redlock = RedlockBuilder::new(cluster)
+        let redsync = RedsyncBuilder::new(cluster)
             .retry_delay(Duration::from_millis(100))
             .build();
 
-        assert_eq!(redlock.cluster.len(), 1);
-        assert_eq!(redlock.quorum, 1);
-        assert_eq!(redlock.retry_count, 3);
-        assert_eq!(redlock.retry_delay, Duration::from_millis(100));
-        assert_eq!(redlock.retry_jitter, 50.0);
-        assert_eq!(redlock.drift_factor, 0.01);
+        assert_eq!(redsync.cluster.len(), 1);
+        assert_eq!(redsync.quorum, 1);
+        assert_eq!(redsync.retry_count, 3);
+        assert_eq!(redsync.retry_delay, Duration::from_millis(100));
+        assert_eq!(redsync.retry_jitter, 50.0);
+        assert_eq!(redsync.drift_factor, 0.01);
 
         Ok(())
     }

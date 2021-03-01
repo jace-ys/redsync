@@ -1,12 +1,15 @@
 [package]
-name = "redlock-rs"
+name = "redsync"
 version = "0.1.0"
 authors = ["jace-ys <jaceys.tan@gmail.com>"]
 edition = "2018"
-
-[lib]
-name = "redlock"
-path = "src/lib.rs"
+description = "A Rust implementation of Redlock for distributed locks with Redis"
+readme = "README.md"
+homepage = "https://github.com/jace-ys/redsync"
+repository = "https://github.com/jace-ys/redsync"
+license-file = "LICENSE"
+keywords = ["redsync", "redlock", "redis", "distributed-locks", "distributed-systems"]
+categories = ["concurrency", "algorithms"]
 
 [[bin]]
 name = "example"

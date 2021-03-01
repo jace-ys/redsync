@@ -1,5 +1,5 @@
-use crate::builder::RedlockBuilder;
-use crate::errors::{MultiError, RedlockError};
+use crate::builder::RedsyncBuilder;
+use crate::errors::{MultiError, RedsyncError};
 use crate::instance::Instance;
 
 use std::ops::{Add, Sub};
@@ -16,7 +16,7 @@ pub struct Lock {
     pub expiry: Instant,
 }
 
-pub struct Redlock<I: Instance> {
+pub struct Redsync<I: Instance> {
     pub(crate) cluster: Vec<I>,
     pub(crate) quorum: u32,
     pub(crate) retry_count: u32,
@@ -30,17 +30,17 @@ enum Call {
     Extend,
 }
 
-impl<I: Instance> Redlock<I> {
+impl<I: Instance> Redsync<I> {
     pub fn new(cluster: Vec<I>) -> Self {
-        RedlockBuilder::new(cluster).build()
+        RedsyncBuilder::new(cluster).build()
     }
 
-    pub fn lock(&self, resource: &str, ttl: Duration) -> Result<Lock, RedlockError> {
+    pub fn lock(&self, resource: &str, ttl: Duration) -> Result<Lock, RedsyncError> {
         let value = self.get_unique_lock_id();
         self.call(Call::Lock, resource, &value, ttl)
     }
 
-    pub fn extend(&self, lock: &Lock, ttl: Duration) -> Result<Lock, RedlockError> {
+    pub fn extend(&self, lock: &Lock, ttl: Duration) -> Result<Lock, RedsyncError> {
         self.call(Call::Extend, &lock.resource, &lock.value, ttl)
     }
 
@@ -50,7 +50,7 @@ impl<I: Instance> Redlock<I> {
         resource: &str,
         value: &str,
         ttl: Duration,
-    ) -> Result<Lock, RedlockError> {
+    ) -> Result<Lock, RedsyncError> {
         let drift = Duration::from_millis((ttl.as_millis() as f64 * self.drift_factor) as u64 + 2);
 
         let mut errors = MultiError::new();
@@ -90,12 +90,12 @@ impl<I: Instance> Redlock<I> {
         }
 
         match call {
-            Call::Lock => Err(RedlockError::LockRetriesExceeded(errors)),
-            Call::Extend => Err(RedlockError::ExtendRetriesExceeded(errors)),
+            Call::Lock => Err(RedsyncError::LockRetriesExceeded(errors)),
+            Call::Extend => Err(RedsyncError::ExtendRetriesExceeded(errors)),
         }
     }
 
-    pub fn unlock(&self, lock: &Lock) -> Result<(), RedlockError> {
+    pub fn unlock(&self, lock: &Lock) -> Result<(), RedsyncError> {
         let mut n = 0;
         let mut errors = MultiError::new();
 
@@ -107,7 +107,7 @@ impl<I: Instance> Redlock<I> {
         }
 
         if n < self.quorum {
-            return Err(RedlockError::UnlockFailed(errors));
+            return Err(RedsyncError::UnlockFailed(errors));
         }
 
         Ok(())
@@ -153,31 +153,31 @@ mod tests {
     }
 
     impl Instance for FakeInstance {
-        fn acquire(&self, _lock: &Lock) -> Result<(), RedlockError> {
+        fn acquire(&self, _lock: &Lock) -> Result<(), RedsyncError> {
             match self.acquire {
                 1 => Ok(()),
-                _ => Err(RedlockError::ResourceLocked),
+                _ => Err(RedsyncError::ResourceLocked),
             }
         }
 
-        fn extend(&self, _lock: &Lock) -> Result<(), RedlockError> {
+        fn extend(&self, _lock: &Lock) -> Result<(), RedsyncError> {
             match self.extend {
                 1 => Ok(()),
-                _ => Err(RedlockError::InvalidLease),
+                _ => Err(RedsyncError::InvalidLease),
             }
         }
 
-        fn release(&self, _lock: &Lock) -> Result<(), RedlockError> {
+        fn release(&self, _lock: &Lock) -> Result<(), RedsyncError> {
             match self.release {
                 1 => Ok(()),
-                _ => Err(RedlockError::InvalidLease),
+                _ => Err(RedsyncError::InvalidLease),
             }
         }
     }
 
     #[test]
     fn lock() {
-        let dlm = Redlock::new(vec![
+        let dlm = Redsync::new(vec![
             FakeInstance::new(1, 1, 1),
             FakeInstance::new(1, 1, 1),
             FakeInstance::new(0, 1, 1),
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn lock_error() {
-        let dlm = Redlock::new(vec![
+        let dlm = Redsync::new(vec![
             FakeInstance::new(0, 1, 1),
             FakeInstance::new(0, 1, 1),
             FakeInstance::new(1, 1, 1),
@@ -203,13 +203,13 @@ mod tests {
         let attempt = dlm.lock("test", Duration::from_secs(1));
         assert!(matches!(
             attempt,
-            Err(RedlockError::LockRetriesExceeded { .. })
+            Err(RedsyncError::LockRetriesExceeded { .. })
         ));
     }
 
     #[test]
-    fn extend() -> Result<(), RedlockError> {
-        let dlm = Redlock::new(vec![
+    fn extend() -> Result<(), RedsyncError> {
+        let dlm = Redsync::new(vec![
             FakeInstance::new(1, 1, 1),
             FakeInstance::new(1, 1, 1),
             FakeInstance::new(1, 0, 1),
@@ -228,8 +228,8 @@ mod tests {
     }
 
     #[test]
-    fn extend_error() -> Result<(), RedlockError> {
-        let dlm = Redlock::new(vec![
+    fn extend_error() -> Result<(), RedsyncError> {
+        let dlm = Redsync::new(vec![
             FakeInstance::new(1, 0, 1),
             FakeInstance::new(1, 0, 1),
             FakeInstance::new(1, 1, 1),
@@ -239,15 +239,15 @@ mod tests {
         let attempt = dlm.extend(&lock, Duration::from_secs(2));
         assert!(matches!(
             attempt,
-            Err(RedlockError::ExtendRetriesExceeded { .. })
+            Err(RedsyncError::ExtendRetriesExceeded { .. })
         ));
 
         Ok(())
     }
 
     #[test]
-    fn unlock() -> Result<(), RedlockError> {
-        let dlm = Redlock::new(vec![
+    fn unlock() -> Result<(), RedsyncError> {
+        let dlm = Redsync::new(vec![
             FakeInstance::new(1, 1, 1),
             FakeInstance::new(1, 1, 1),
             FakeInstance::new(1, 1, 0),
@@ -261,8 +261,8 @@ mod tests {
     }
 
     #[test]
-    fn unlock_error() -> Result<(), RedlockError> {
-        let dlm = Redlock::new(vec![
+    fn unlock_error() -> Result<(), RedsyncError> {
+        let dlm = Redsync::new(vec![
             FakeInstance::new(1, 1, 0),
             FakeInstance::new(1, 1, 0),
             FakeInstance::new(1, 1, 1),
@@ -270,7 +270,7 @@ mod tests {
         let lock = dlm.lock("test", Duration::from_secs(1))?;
 
         let attempt = dlm.unlock(&lock);
-        assert!(matches!(attempt, Err(RedlockError::UnlockFailed { .. })));
+        assert!(matches!(attempt, Err(RedsyncError::UnlockFailed { .. })));
 
         Ok(())
     }
@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn get_unique_lock_id() {
         let cluster = vec![FakeInstance::new(1, 1, 1)];
-        let dlm = Redlock::new(cluster);
+        let dlm = Redsync::new(cluster);
 
         let value = dlm.get_unique_lock_id();
         assert_eq!(value.len(), 20);
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn get_retry_delay() {
         let cluster = vec![FakeInstance::new(1, 1, 1)];
-        let dlm = Redlock::new(cluster);
+        let dlm = Redsync::new(cluster);
 
         let retry_delay = dlm.get_retry_delay();
         let (min, max) = (Duration::from_millis(100), Duration::from_millis(300));

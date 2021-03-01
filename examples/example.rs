@@ -2,7 +2,7 @@ use std::error::Error;
 use std::thread;
 use std::time::Duration;
 
-use redlock::{RedisInstance, Redlock, RedlockError};
+use redsync::{RedisInstance, Redsync, RedsyncError};
 
 fn main() {
     if let Err(err) = run() {
@@ -11,7 +11,7 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let dlm = Redlock::new(vec![
+    let dlm = Redsync::new(vec![
         RedisInstance::new("redis://127.0.0.1:6389")?,
         RedisInstance::new("redis://127.0.0.1:6399")?,
         RedisInstance::new("redis://127.0.0.1:6379")?,
@@ -35,8 +35,8 @@ fn run() -> Result<(), Box<dyn Error>> {
 
     match dlm.unlock(&lock1) {
         Ok(()) => println!("[t = 2] Released 1st lock after 2 seconds!"),
-        Err(RedlockError::UnlockFailed(err)) => {
-            if err.includes(RedlockError::InvalidLease) {
+        Err(RedsyncError::UnlockFailed(err)) => {
+            if err.includes(RedsyncError::InvalidLease) {
                 println!("[t = 2] Failed to release 1st lock. Lock has expired!")
             }
         }
