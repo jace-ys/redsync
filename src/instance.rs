@@ -3,6 +3,7 @@ use crate::redsync::Lock;
 
 use std::time::Duration;
 
+/// `Instance` represents an entity with locking and unlocking capabilities.
 pub trait Instance {
     fn acquire(&self, lock: &Lock) -> Result<(), RedsyncError>;
     fn extend(&self, lock: &Lock) -> Result<(), RedsyncError>;
@@ -26,6 +27,7 @@ else
     return 0
 end";
 
+/// `RedisInstance` is the implementation of the Instance trait for a Redis server.
 pub struct RedisInstance {
     client: redis::Client,
 }

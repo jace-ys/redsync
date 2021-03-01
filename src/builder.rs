@@ -3,6 +3,7 @@ use crate::redsync::Redsync;
 
 use std::time::Duration;
 
+/// `RedsyncBuilder` is a builder for configuring and constructing a Redsync instance.
 pub struct RedsyncBuilder<I: Instance> {
     cluster: Vec<I>,
     retry_count: u32,

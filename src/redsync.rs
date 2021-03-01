@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 
+/// `Lock` holds the metadata of an acquired lock.
 pub struct Lock {
     pub resource: String,
     pub value: String,
@@ -16,6 +17,7 @@ pub struct Lock {
     pub expiry: Instant,
 }
 
+/// `Redsync` is a distributed lock manager that implements the Redlock algorithm.
 pub struct Redsync<I: Instance> {
     pub(crate) cluster: Vec<I>,
     pub(crate) quorum: u32,

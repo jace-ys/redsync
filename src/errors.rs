@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use thiserror::Error;
 
+/// `RedsyncError` is an enum of all error kinds returned by the crate.
 #[derive(Error, Debug, PartialEq)]
 pub enum RedsyncError {
     #[error("{0}")]
@@ -23,6 +24,7 @@ pub enum RedsyncError {
     UnlockFailed(MultiError),
 }
 
+/// `MultiError` wraps Vec<RedsyncError>, typically aggregated over instances in a Redsync cluster.
 #[derive(Debug, Default, PartialEq)]
 pub struct MultiError(Vec<RedsyncError>);
 
