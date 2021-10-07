@@ -102,7 +102,7 @@ impl<I: Instance> Redsync<I> {
         let mut errors = MultiError::new();
 
         for instance in &self.cluster {
-            match instance.release(&lock) {
+            match instance.release(lock) {
                 Ok(()) => n += 1,
                 Err(e) => errors.push(e),
             };

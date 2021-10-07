@@ -40,7 +40,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 println!("[t = 2] Failed to release 1st lock. Lock has expired!")
             }
         }
-        Err(_) => (),
+        Err(err) => println!("[t = 2] Unexpected error: {}", err),
     };
 
     dlm.extend(&lock2, Duration::from_secs(2))
