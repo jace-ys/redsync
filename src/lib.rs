@@ -4,7 +4,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! redsync = "1.0.0"
+//! redsync = "1.0.1"
 //! ```
 //!
 //! # Quick Start
